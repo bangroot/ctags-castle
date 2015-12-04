@@ -19,14 +19,13 @@ if (!args) {
 	System.exit(1)
 }
 if (args[0].startsWith("--list-kinds")) {
-	println "c\tclasses"
-	println "e\tenum constants"
-	println "f\tfields"
-	println "g\tenum types"
-	println "i\tinterfaces"
-	println "l\tlocal variables\t[off]"
-	println "m\tmethods"
-	println "p\tpackages"
+	println "c classes"
+	println "e enum constants"
+	println "f fields"
+	println "g enum types"
+	println "i interfaces"
+	println "m methods"
+	println "p packages"
 	System.exit(0)
 }
 
