@@ -20,9 +20,7 @@ if (!args) {
 }
 if (args[0].startsWith("--list-kinds")) {
 	println "c classes"
-	println "e enum constants"
 	println "f fields"
-	println "g enum types"
 	println "i interfaces"
 	println "m methods"
 	println "p packages"
@@ -56,11 +54,17 @@ try {
 	println writer.toString()
 	System.exit(1)
 }
-
+println "!_TAG_FILE_FORMAT       2       /extended format/"
+println "!_TAG_FILE_SORTED       0       /0=unsorted, 1=sorted, 2=foldcase/"
+println "!_TAG_PROGRAM_AUTHOR    Dave Brown  /bangroot@gmail.com/"
+println "!_TAG_PROGRAM_NAME      groovytags      //"
+println "!_TAG_PROGRAM_URL       https://github.com/bangroot/ctags-castle     /GitHub repository/"
+println "!_TAG_PROGRAM_VERSION   0.1.0   //"
 println writer.toString()
 System.exit(0)
 
-class AstNodeToScriptVisitor extends PrimaryClassNodeOperation implements GroovyCodeVisitor, GroovyClassVisitor {
+class AstNodeToScriptVisitor extends PrimaryClassNodeOperation implements GroovyClassVisitor {
+	private static final String WHITESPACE = "[ \\t]*"
 
 	private final Writer _out
 	Stack<String> classNameStack = new Stack<String>()
@@ -68,11 +72,13 @@ class AstNodeToScriptVisitor extends PrimaryClassNodeOperation implements Groovy
 	boolean readyToIndent = true
 	boolean showScriptClass
 	String fileName
+	List<String> lines
 
 	def AstNodeToScriptVisitor(String fileName, Writer writer, boolean showScriptClass = true) {
 		this.fileName = fileName
 		this._out = writer
 		this.showScriptClass = showScriptClass
+		lines = new File(fileName).readLines()
 	}
 
 	void call(SourceUnit source, GeneratorContext context, ClassNode classNode) {
@@ -131,30 +137,31 @@ class AstNodeToScriptVisitor extends PrimaryClassNodeOperation implements Groovy
 		readyToIndent = true
 	}
 
-	void visitPackage(PackageNode packageNode) {
-
-		if (packageNode) {
-			def packName
-			def packLine
-			if (packageNode.name.endsWith('.')) {
-				packName = packageNode.name[0..-2]
-				packLine = packageNode.text[0..-2]
-			} else {
-				packName = packageNode.name
-				packLine = packageNode.text
-			}
-			_out.println "${packName}\t${fileName}\t/${packLine}/;\"\tp"
+	String getAccessString(int mods) {
+		switch (true) {
+			case Modifier.isPublic(mods):
+				return "public"
+			case Modifier.isProtected(mods):
+				return "protected"
+			default:
+				return "private"
 		}
 	}
 
-	void visitImport(ImportNode node) {
+	void visitPackage(PackageNode node) {
+
 		if (node) {
-			node.annotations?.each {
-				visitAnnotationNode(it)
-				printLineBreak()
+			def packName
+			def packLine
+			if (node.name.endsWith('.')) {
+				packName = node.name[0..-2]
+				packLine = node.text[0..-2]
+			} else {
+				packName = node.name
+				packLine = node.text
 			}
-			print node.text
-			printLineBreak()
+			int lineNumber = getRealLineNumber(node)
+			_out.println "${packName}\t${fileName}\t/^${lines.get(lineNumber)}\$/;\"\tp\tline:${lineNumber + 1}"
 		}
 	}
 
@@ -163,11 +170,13 @@ class AstNodeToScriptVisitor extends PrimaryClassNodeOperation implements Groovy
 
 		classNameStack.push(node.nameWithoutPackage)
 
-		_out.println "${node.nameWithoutPackage}\t${fileName}\t/class ${node.nameWithoutPackage}/\"\tc"
-		//node?.properties?.each { visitProperty(it) }
-		//printLineBreak()
-		//node?.fields?.each { visitField(it) }
-		//printDoubleBreak()
+		int lineNumber = getRealLineNumber(node)
+		
+		_out.println "${node.nameWithoutPackage}\t${fileName}\t/^${lines.get(lineNumber)}\$/;\"\tc\taccess:${getAccessString(node.modifiers)}\tline:${lineNumber + 1}"
+		node?.properties?.each { visitProperty(it) }
+		printLineBreak()
+		node?.fields?.each { visitField(it) }
+		printDoubleBreak()
 		node?.declaredConstructors?.each { visitConstructor(it) }
 		printLineBreak()
 		node?.methods?.each { visitMethod(it) }
@@ -179,496 +188,48 @@ class AstNodeToScriptVisitor extends PrimaryClassNodeOperation implements Groovy
 		visitMethod(node)
 	}
 
-	private String visitParameters(parameters) {
-		boolean first = true
-
-		parameters.each { Parameter it ->
-			if (!first) {
-				print ', '
-			}
-			first = false
-
-			it.annotations?.each {
-				visitAnnotationNode(it)
-				print(' ')
-			}
-
-			visitModifiers(it.modifiers)
-				visitType it.type
-				print ' ' + it.name
-				if (it.initialExpression && !(it.initialExpression instanceof EmptyExpression)) {
-					print ' = '
-					it.initialExpression.visit this
-				}
-		}
-	}
-
 	@Override
 	void visitMethod(MethodNode node) {
-		
+		int lineNumber = getRealLineNumber(node)
 		if (node.name == '<init>') {
-			print "${classNameStack.peek()}\t${fileName}\t/${classNameStack.peek}"
-			visitParameters(node.parameters)
-			print ")/;\"\tm\tclass:${classNameStack.peek()}"
-			printLineBreak()
+			_out.println "${classNameStack.peek()}\t${fileName}\t/^${lines.get(lineNumber)}\$/;\"\tm\tclass:${classNameStack.peek()}\taccess:${getAccessString(node.modifiers)}\tsignature:(${getSignature(node.parameters)})\tline:${lineNumber + 1}"
 		} else if (node.name == '<clinit>') {
 			//do nothing with static initializers
 		} else {
-				print "${node.name}\t${fileName}\t/${node.returnType.nameWithoutPackage}[ \\t]*${node.name}[ \\t]*("
-				visitParameters(node.parameters)
-				print ")/;\"\tm\tclass:${classNameStack.peek()}"
-				printLineBreak()
+				_out.println "${node.name}\t${fileName}\t/^${lines.get(lineNumber)}\$/;\"\tm\tclass:${classNameStack.peek()}\taccess:${getAccessString(node.modifiers)}\tsignature:(${getSignature(node.parameters)})\tline:${lineNumber + 1}"
 		}
 	}
 
-	private def visitModifiers(int modifiers) {
-		if (Modifier.isAbstract(modifiers)) {
-			print 'abstract '
-		}
-		if (Modifier.isFinal(modifiers)) {
-			print 'final '
-		}
-		if (Modifier.isInterface(modifiers)) {
-			print 'interface '
-		}
-		if (Modifier.isNative(modifiers)) {
-			print 'native '
-		}
-		if (Modifier.isPrivate(modifiers)) {
-			print 'private '
-		}
-		if (Modifier.isProtected(modifiers)) {
-			print 'protected '
-		}
-		if (Modifier.isPublic(modifiers)) {
-			print 'public '
-		}
-		if (Modifier.isStatic(modifiers)) {
-			print 'static '
-		}
-		if (Modifier.isSynchronized(modifiers)) {
-			print 'synchronized '
-		}
-		if (Modifier.isTransient(modifiers)) {
-			print 'transient '
-		}
-		if (Modifier.isVolatile(modifiers)) {
-			print 'volatile '
-		}
-	}
-
-	@Override
-	void visitField(FieldNode node) {
-		node?.annotations?.each {
-			visitAnnotationNode(it)
-			printLineBreak()
-		}
-		visitModifiers(node.modifiers)
-			visitType node.type
-			print " $node.name "
-			// do not print initial expression, as this is executed as part of the constructor, unless on static constant
-			Expression exp = node.initialValueExpression
-			if (exp instanceof ConstantExpression) exp = Verifier.transformToPrimitiveConstantIfPossible(exp)
-				ClassNode type = exp?.type
-				if (Modifier.isStatic(node.modifiers) && Modifier.isFinal(node.getModifiers())
-						&& exp instanceof ConstantExpression
-						&& type == node.type
-						&& ClassHelper.isStaticConstantInitializerType(type)) {
-					// GROOVY-5150: final constants may be initialized directly
-					print ' = '
-					if (ClassHelper.STRING_TYPE == type) {
-						print "'"+node.initialValueExpression.text.replaceAll("'", "\\\\'")+"'"
-					} else if (ClassHelper.char_TYPE == type) {
-						print "'${node.initialValueExpression.text}'"
-					} else {
-						print node.initialValueExpression.text
-					}
-						}
-		printLineBreak()
-	}
-    private void visitGenerics(GenericsType[] generics) {
-
-        if (generics) {
-            print '<'
-            boolean first = true
-            generics.each { GenericsType it ->
-                if (!first) {
-                    print ', '
-                }
-                first = false
-                print it.name
-                if (it.upperBounds) {
-                    print ' extends '
-                    boolean innerFirst = true
-                    it.upperBounds.each { ClassNode upperBound ->
-                        if (!innerFirst) {
-                            print ' & '
-                        }
-                        innerFirst = false
-                        visitType upperBound
-                    }
-                }
-                if (it.lowerBound) {
-                    print ' super '
-                    visitType it.lowerBound
-                }
-            }
-            print '>'
-        }
-    }
-
-	void visitAnnotationNode(AnnotationNode node) {
-		print '@' + node?.classNode?.name
-		if (node?.members) {
-			print '('
-			boolean first = true
-			node.members.each { String name, Expression value ->
-				if (first) {
-					first = false
-				} else {
-					print ', '
-				}
-				print name + ' = '
-				value.visit(this)
+	String getSignature(Parameter[] params) {
+		return params.collect({ p ->
+			if (p.isDynamicTyped()) {
+				return "def ${p.name}"
+			} else {
+				return "${p.type.nameWithoutPackage} ${p.name}"
 			}
-			print ')'
-		}
-
+		}).join(",")
 	}
 
+	void visitField(FieldNode node) {
+		int lineNumber = getRealLineNumber(node)
+		_out.println "${node.name}\t${fileName}\t/^${lines.get(lineNumber)}\$/;\"\tf\tclass:${classNameStack.peek()}\taccess:${getAccessString(node.modifiers)}\tline:${lineNumber + 1}"
+	}
+	
 	@Override
 	void visitProperty(PropertyNode node) {
 		// is a FieldNode, avoid double dispatch
 	}
 
-	@Override
-	void visitBlockStatement(BlockStatement block) {
-		block?.statements?.each {
-			it.visit(this)
-			printLineBreak()
-		}
-		if (!_out.toString().endsWith('\n')) {
-			printLineBreak()
-		}
-	}
-
-	@Override
-	void visitForLoop(ForStatement statement) {
-
-		print 'for ('
-		if (statement?.variable != ForStatement.FOR_LOOP_DUMMY) {
-			visitParameters([statement.variable])
-			print ' : '
-		}
-
-		if (statement?.collectionExpression instanceof ListExpression) {
-			statement?.collectionExpression?.visit this
-		} else {
-			statement?.collectionExpression?.visit this
-		}
-		print ') {'
-		printLineBreak()
-		indented {
-			statement?.loopBlock?.visit this
-		}
-		print '}'
-		printLineBreak()
-	}
-
-	@Override
-	void visitIfElse(IfStatement ifElse) {
-		print 'if ('
-				ifElse?.booleanExpression?.visit this
-				print ') {'
-			printLineBreak()
-			indented {
-				ifElse?.ifBlock?.visit this
+	int getRealLineNumber(def node) {
+		if (node instanceof AnnotatedNode && node.annotations) {
+			int maxAnnotationLine = node.lineNumber
+			node.annotations.each {
+				maxAnnotationLine = Math.max(maxAnnotationLine, it.lineNumber)	
 			}
-			printLineBreak()
-			if (ifElse?.elseBlock && !(ifElse.elseBlock instanceof EmptyStatement)) {
-				print '} else {'
-					printLineBreak()
-					indented {
-						ifElse?.elseBlock?.visit this
-					}
-					printLineBreak()
-			}
-			print '}'
-			printLineBreak()
-	}
-
-	@Override
-	void visitExpressionStatement(ExpressionStatement statement) {
-		statement.expression.visit this
-	}
-
-	@Override
-	void visitReturnStatement(ReturnStatement statement) {
-		printLineBreak()
-		print 'return '
-		statement.getExpression().visit(this)
-		printLineBreak()
-	}
-
-	@Override
-	void visitSwitch(SwitchStatement statement) {
-		print 'switch ('
-		statement?.expression?.visit this
-		print ') {'
-		printLineBreak()
-		indented {
-			statement?.caseStatements?.each {
-				visitCaseStatement it
-			}
-			if (statement?.defaultStatement) {
-				print 'default: '
-				printLineBreak()
-				statement?.defaultStatement?.visit this
-			}
-		}
-		print '}'
-		printLineBreak()
-	}
-
-	@Override
-	void visitCaseStatement(CaseStatement statement) {
-		print 'case '
-		statement?.expression?.visit this
-		print ':'
-		printLineBreak()
-		indented {
-			statement?.code?.visit this
-		}
-	}
-
-	@Override
-	void visitBreakStatement(BreakStatement statement) {
-		print 'break'
-		printLineBreak()
-	}
-
-	@Override
-	void visitContinueStatement(ContinueStatement statement) {
-		print 'continue'
-		printLineBreak()
-	}
-
-	@Override
-	void visitMethodCallExpression(MethodCallExpression expression) {
-
-		Expression objectExp = expression.getObjectExpression()
-		if (objectExp instanceof VariableExpression) {
-			visitVariableExpression(objectExp, false)
+			return maxAnnotationLine
 		} else {
-			objectExp.visit(this)
+			return node.lineNumber - 1
 		}
-		if (expression.spreadSafe) {
-			print '*'
-		}
-		if (expression.safe) {
-			print '?'
-		}
-		print '.'
-		Expression method = expression.getMethod()
-		if (method instanceof ConstantExpression) {
-			visitConstantExpression(method, true)
-		} else {
-			method.visit(this)
-		}
-		expression.getArguments().visit(this)
-	}
-
-	@Override
-	void visitStaticMethodCallExpression(StaticMethodCallExpression expression) {
-		print expression?.ownerType?.name + '.' + expression?.method
-		if (expression?.arguments instanceof VariableExpression || expression?.arguments instanceof MethodCallExpression) {
-			print '('
-			expression?.arguments?.visit this
-			print ')'            
-		} else {
-			expression?.arguments?.visit this
-		}
-	}
-
-	@Override
-	void visitConstructorCallExpression(ConstructorCallExpression expression) {
-		if (expression?.isSuperCall()) {
-			print 'super'
-		} else if (expression?.isThisCall()) {
-			print 'this '
-		} else {
-			print 'new '
-			visitType expression?.type
-		}
-		expression?.arguments?.visit this
-	}
-
-	@Override
-	void visitBinaryExpression(BinaryExpression expression) {
-		expression?.leftExpression?.visit this
-		print " $expression.operation.text "
-		expression.rightExpression.visit this
-
-		if (expression?.operation?.text == '[') {
-			print ']'
-		}
-	}
-
-	@Override
-	void visitPostfixExpression(PostfixExpression expression) {
-		print '('
-		expression?.expression?.visit this
-		print ')'
-		print expression?.operation?.text
-	}
-
-	@Override
-	void visitPrefixExpression(PrefixExpression expression) {
-		print expression?.operation?.text
-		print '('
-		expression?.expression?.visit this
-		print ')'
-	}
-
-
-	@Override
-	void visitClosureExpression(ClosureExpression expression) {
-		print '{ '
-		if (expression?.parameters) {
-			visitParameters(expression?.parameters)
-			print ' ->'
-		}
-		printLineBreak()
-		indented {
-			expression?.code?.visit this
-		}
-		print '}'
-	}
-
-	@Override
-	void visitTupleExpression(TupleExpression expression) {
-		print '('
-		visitExpressionsAndCommaSeparate(expression?.expressions)
-		print ')'
-	}
-
-	@Override
-	void visitRangeExpression(RangeExpression expression) {
-		print '('
-		expression?.from?.visit this
-		print '..'
-		expression?.to?.visit this
-		print ')'
-	}
-
-	@Override
-	void visitPropertyExpression(PropertyExpression expression) {
-		expression?.objectExpression?.visit this
-		if (expression?.spreadSafe) {
-			print '*'
-		} else if (expression?.isSafe()) {
-			print '?'
-		}
-		print '.'
-		if (expression?.property instanceof ConstantExpression) {
-			visitConstantExpression(expression?.property, true)
-		} else {
-			expression?.property?.visit this
-		}
-	}
-
-	@Override
-	void visitAttributeExpression(AttributeExpression attributeExpression) {
-		visitPropertyExpression attributeExpression
-	}
-
-	@Override
-	void visitFieldExpression(FieldExpression expression) {
-		print expression?.field?.name
-	}
-
-	void visitConstantExpression(ConstantExpression expression, boolean unwrapQuotes = false) {
-		if (expression.value instanceof String && !unwrapQuotes) {
-			// string reverse escaping is very naive
-			def escaped = ((String) expression.value).replaceAll('\n', '\\\\n').replaceAll("'", "\\\\'")
-			print "'$escaped'"
-		} else {
-			print expression.value
-		}
-	}
-
-	@Override
-	void visitClassExpression(ClassExpression expression) {
-		print expression.text
-	}
-
-	void visitVariableExpression(VariableExpression expression, boolean spacePad = true) {
-
-		if (spacePad) {
-			print ' ' + expression.name + ' '
-		} else {
-			print expression.name
-		}
-	}
-
-	@Override
-	void visitDeclarationExpression(DeclarationExpression expression) {
-		// handle multiple assignment expressions
-		if (expression?.leftExpression instanceof ArgumentListExpression) {
-			print 'def '
-			visitArgumentlistExpression expression?.leftExpression, true
-			print " $expression.operation.text "
-			expression.rightExpression.visit this
-
-			if (expression?.operation?.text == '[') {
-				print ']'
-			}
-		} else {
-			visitType expression?.leftExpression?.type
-			visitBinaryExpression expression // is a BinaryExpression
-		}
-	}
-
-	@Override
-	void visitGStringExpression(GStringExpression expression) {
-		print '"' + expression.text + '"'
-	}
-
-	@Override
-	void visitSpreadExpression(SpreadExpression expression) {
-		print '*'
-		expression?.expression?.visit this
-	}
-
-	@Override
-	void visitNotExpression(NotExpression expression) {
-		print '!('
-		expression?.expression?.visit this
-		print ')'
-	}
-
-	@Override
-	void visitUnaryMinusExpression(UnaryMinusExpression expression) {
-		print '-('
-		expression?.expression?.visit this
-		print ')'
-	}
-
-	@Override
-	void visitUnaryPlusExpression(UnaryPlusExpression expression) {
-		print '+('
-		expression?.expression?.visit this
-		print ')'
-	}
-
-	@Override
-	void visitCastExpression(CastExpression expression) {
-		print '(('
-		expression?.expression?.visit this
-		print ') as '
-		visitType(expression?.type)
-		print ')'
-
 	}
 
 	/**
@@ -684,224 +245,6 @@ class AstNodeToScriptVisitor extends PrimaryClassNodeOperation implements Groovy
 		} else {
 			print name
 		}
-		visitGenerics classNode?.genericsTypes
 	}
 
-	void visitArgumentlistExpression(ArgumentListExpression expression, boolean showTypes = false) {
-		print '('
-		int count = expression?.expressions?.size()
-		expression.expressions.each {
-			if (showTypes) {
-				visitType it.type
-				print ' '
-			}
-			if (it instanceof VariableExpression) {
-				visitVariableExpression it, false
-			} else if (it instanceof ConstantExpression) {
-				visitConstantExpression it, false
-			} else {
-				it.visit this
-			}
-			count--
-			if (count) print ', '
-		}
-		print ')'
-	}
-
-	@Override
-	void visitBytecodeExpression(BytecodeExpression expression) {
-		print '/*BytecodeExpression*/'
-		printLineBreak()
-	}
-
-
-
-	@Override
-	void visitMapExpression(MapExpression expression) {
-		print '['
-		if (expression?.mapEntryExpressions?.size() == 0) {
-			print ':'
-		} else {
-			visitExpressionsAndCommaSeparate(expression?.mapEntryExpressions)
-		}
-		print ']'
-	}
-
-	@Override
-	void visitMapEntryExpression(MapEntryExpression expression) {
-		if (expression?.keyExpression instanceof SpreadMapExpression) {
-			print '*'            // is this correct? 
-		} else {
-			expression?.keyExpression?.visit this
-		}
-		print ': '
-		expression?.valueExpression?.visit this
-	}
-
-	@Override
-	void visitListExpression(ListExpression expression) {
-		print '['
-		visitExpressionsAndCommaSeparate(expression?.expressions)
-		print ']'
-	}
-
-	@Override
-	void visitTryCatchFinally(TryCatchStatement statement) {
-		print 'try {'
-		printLineBreak()
-		indented {
-			statement?.tryStatement?.visit this
-		}
-		printLineBreak()
-		print '} '
-		printLineBreak()
-		statement?.catchStatements?.each { CatchStatement catchStatement ->
-			visitCatchStatement(catchStatement)
-		}
-		print 'finally { '
-		printLineBreak()
-		indented {
-			statement?.finallyStatement?.visit this
-		}
-		print '} '
-		printLineBreak()
-	}
-
-	@Override
-	void visitThrowStatement(ThrowStatement statement) {
-		print 'throw '
-		statement?.expression?.visit this
-		printLineBreak()
-	}
-
-	@Override
-	void visitSynchronizedStatement(SynchronizedStatement statement) {
-		print 'synchronized ('
-		statement?.expression?.visit this
-		print ') {'
-		printLineBreak()
-		indented {
-			statement?.code?.visit this
-		}
-		print '}'
-	}
-
-	@Override
-	void visitTernaryExpression(TernaryExpression expression) {
-		expression?.booleanExpression?.visit this
-		print ' ? '
-		expression?.trueExpression?.visit this
-		print ' : '
-		expression?.falseExpression?.visit this
-	}
-
-	@Override
-	void visitShortTernaryExpression(ElvisOperatorExpression expression) {
-		visitTernaryExpression(expression)
-	}
-
-	@Override
-	void visitBooleanExpression(BooleanExpression expression) {
-		expression?.expression?.visit this
-	}
-
-	@Override
-	void visitWhileLoop(WhileStatement statement) {
-		print 'while ('
-		statement?.booleanExpression?.visit this
-		print ') {'
-		printLineBreak()
-		indented {
-			statement?.loopBlock?.visit this
-		}
-		printLineBreak()
-		print '}'
-		printLineBreak()
-	}
-
-	@Override
-	void visitDoWhileLoop(DoWhileStatement statement) {
-		print 'do {'
-		printLineBreak()
-		indented {
-			statement?.loopBlock?.visit this
-		}
-		print '} while ('
-		statement?.booleanExpression?.visit this
-		print ')'
-		printLineBreak()
-	}
-
-	@Override
-	void visitCatchStatement(CatchStatement statement) {
-		print 'catch ('
-		visitParameters([statement.variable])
-		print ') {'
-		printLineBreak()
-		indented {
-			statement.code?.visit this
-		}
-		print '} '
-		printLineBreak()
-	}
-
-	@Override
-	void visitBitwiseNegationExpression(BitwiseNegationExpression expression) {
-		print '~('
-		expression?.expression?.visit this
-		print ') '
-	}
-
-	@Override
-	void visitAssertStatement(AssertStatement statement) {
-		print 'assert '
-		statement?.booleanExpression?.visit this
-		print ' : '
-		statement?.messageExpression?.visit this
-	}
-
-	@Override
-	void visitClosureListExpression(ClosureListExpression expression) {
-		boolean first = true
-		expression?.expressions?.each {
-			if (!first) {
-				print ';'
-			}
-			first = false
-			it.visit this
-		}
-	}
-
-	@Override
-	void visitMethodPointerExpression(MethodPointerExpression expression) {
-		expression?.expression?.visit this
-		print '.&'
-		expression?.methodName?.visit this
-	}
-
-	@Override
-	void visitArrayExpression(ArrayExpression expression) {
-		print 'new '
-		visitType expression?.elementType
-		print '['
-		visitExpressionsAndCommaSeparate(expression?.sizeExpression)
-		print ']'
-	}
-
-	private void visitExpressionsAndCommaSeparate(List<? super Expression> expressions) {
-		boolean first = true
-		expressions?.each {
-			if (!first) {
-				print ', '
-			}
-			first = false
-			it.visit this
-		}
-	}
-
-	@Override
-	void visitSpreadMapExpression(SpreadMapExpression expression) {
-		print '*:'
-		expression?.expression?.visit this
-	}
 }

@@ -1,14 +1,6 @@
 --langdef=groovy
 --xcmd-groovy=groovytags
---langdef=hoovy
---langmap=hoovy:.hoovy
---regex-hoovy=/^\s*[(private|public|protected|final|synchronized|abstract)[ \t]*]*(def|[A-Za-z0-9_.]+)[ \t]+([A-Za-z0-9_"]+)[ \t]*\(/\2/m,method/
---regex-hoovy=/^[ \t]*private[ \t]+(final)?[ \t]*(def|[a-zA-Z0-9_.]+)[ \t]+([A-Za-z0-9_]+)($|[ \t]+=)/\3/f,field/
---regex-hoovy=/^[ \t]*(public)?(final)?[ \t]*(def|[a-zA-Z0-9_.]+)[ \t]+([A-Za-z0-9_]+)($|[ \t]+=)/\4/p,property/
---regex-hoovy=/^\s*[(private|public|abstract|static)[ \t]*]*class[ \t]+([A-Za-z0-9_]+)\s*/\1/c,class/
---regex-hoovy=/^\s*[(private|public|abstract|static)[ \t]*]*enum[ \t]+([A-Za-z0-9_]+)\s*/\1/e,enum/
---regex-hoovy=/^\s*[(private|public|abstract|static)[ \t]*]*trait[ \t]+([A-Za-z0-9_]+)\s*/\1/t,trait/
---regex-hoovy=/^\s*[(private|public|abstract|static)[ \t]*]*interface[ \t]+([A-Za-z0-9_]+)\s*/\1/i,interface/
+--langmap=groovy:.groovy
 
 --langdef=gradle
 --langmap=gradle:.gradle
