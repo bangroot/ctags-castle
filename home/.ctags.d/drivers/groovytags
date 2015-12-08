@@ -19,11 +19,11 @@ if (!args) {
 	System.exit(1)
 }
 if (args[0].startsWith("--list-kinds")) {
-	println "c classes"
-	println "f fields"
-	println "i interfaces"
-	println "m methods"
-	println "p packages"
+	println "c class"
+	println "f field"
+	println "i interface"
+	println "m method"
+	println "p package"
 	System.exit(0)
 }
 
