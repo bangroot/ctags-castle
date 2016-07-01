@@ -1,7 +1,4 @@
---langdef=groovy
---xcmd-groovy=groovytags
---langmap=groovy:.groovy
-
 --langdef=gradle
 --langmap=gradle:.gradle
 --regex-gradle=/^\s*task\s+([a-zA-Z0-9]+)/\1/t,task/
+
